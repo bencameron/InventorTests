@@ -1,54 +1,75 @@
-﻿using Inventor;
+﻿using System;
 using System.Runtime.InteropServices;
+using System.Security;
+using Inventor;
 
-namespace InventorTests
+public static class InventorAppUtils
 {
-    public static class InventorAppUtils
+    private static class NativeMethods
     {
-        [DllImport("oleaut32.dll", PreserveSig = false)]
-        static extern void GetActiveObject(ref Guid rclsid, IntPtr pvReserved,
-                                            [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
+        private const string OLEAUT32 = "oleaut32.dll";
+        private const string OLE32 = "ole32.dll";
 
-        [DllImport("ole32.dll")]
-        static extern int CLSIDFromProgID(
-            [MarshalAs(UnmanagedType.LPWStr)] string lpszProgID, out Guid pclsid);
+        [DllImport(OLE32, PreserveSig = false)]
+        [SuppressUnmanagedCodeSecurity]
+        internal static extern void CLSIDFromProgIDEx(
+            [MarshalAs(UnmanagedType.LPWStr)] string progId,
+            out Guid clsid);
 
-        /// <summary>
-        /// Gets the currently-running instance of Inventor or starts a new one if one is not already running
-        /// </summary>
-        /// <returns></returns>
-        /// <remarks></remarks>
-        public static Application GetInventorInstance(bool forceNewInstance = false)
+        [DllImport(OLE32, PreserveSig = false)]
+        [SuppressUnmanagedCodeSecurity]
+        internal static extern void CLSIDFromProgID(
+            [MarshalAs(UnmanagedType.LPWStr)] string progId,
+            out Guid clsid);
+
+        [DllImport(OLEAUT32, PreserveSig = false)]
+        [SuppressUnmanagedCodeSecurity]
+        internal static extern void GetActiveObject(
+            ref Guid rclsid,
+            IntPtr reserved,
+            [MarshalAs(UnmanagedType.Interface)] out object ppunk);
+    }
+
+    public static Application GetInventorInstance(bool forceNewInstance = false)
+    {
+        Application app = null;
+
+        if (!forceNewInstance)
         {
-            Application app = null;
-
-            if (!forceNewInstance)
+            try
             {
-                //Check for an instance of inventor, if one is not found then create one.
+                Guid clsid;
+                string progId = "Inventor.Application";
+
                 try
                 {
-                    CLSIDFromProgID("Inventor.Application", out var classId);
-                    GetActiveObject(ref classId, default, out var appObject);
-                    app = (Application)appObject;
+                    NativeMethods.CLSIDFromProgIDEx(progId, out clsid);
                 }
-                catch (Exception)
+                catch
                 {
-                    app = GetNewInventorInstance();
+                    NativeMethods.CLSIDFromProgID(progId, out clsid);
                 }
-            }
 
-            if (app == null)
+                NativeMethods.GetActiveObject(ref clsid, IntPtr.Zero, out object obj);
+                app = (Application)obj;
+            }
+            catch
             {
                 app = GetNewInventorInstance();
             }
-
-            return app;
         }
 
-        private static Application GetNewInventorInstance()
+        if (app == null)
         {
-            var inventorAppType = Type.GetTypeFromProgID("Inventor.Application", true);
-            return (Application)Activator.CreateInstance(inventorAppType);
+            app = GetNewInventorInstance();
         }
+
+        return app;
+    }
+
+    private static Application GetNewInventorInstance()
+    {
+        var inventorType = Type.GetTypeFromProgID("Inventor.Application", true);
+        return (Application)Activator.CreateInstance(inventorType);
     }
 }
